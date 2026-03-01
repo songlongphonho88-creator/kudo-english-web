@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Kudo English – 5 Minutes a Day</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">K</div>
+      <div>
+        <div class="title">Kudo English</div>
+        <div class="subtitle">3–5 phút mỗi ngày</div>
+      </div>
+    </div>
+    <button id="btnParents" class="btn ghost">Parents</button>
+  </header>
+
+  <main class="container">
+    <section id="viewHome" class="view active">
+      <div class="card hero">
+        <h1>Hôm nay học gì?</h1>
+        <p class="muted">Chạm “Bắt đầu” để học 1 từ trong 3–5 phút.</p>
+
+        <div class="row">
+          <div class="stat"><div class="statNum" id="streakNum">0</div><div class="statLabel">Streak</div></div>
+          <div class="stat"><div class="statNum" id="minutesLeft">5</div><div class="statLabel">Phút/ngày</div></div>
+          <div class="stat"><div class="statNum" id="wordsMastered">0</div><div class="statLabel">Từ đã học</div></div>
+        </div>
+
+        <button id="btnStart" class="btn primary big">Bắt đầu hôm nay</button>
+      </div>
+
+      <div class="card">
+        <h2>Sticker của bé</h2>
+        <div id="stickerGrid" class="stickers"></div>
+        <p class="muted small">Hoàn thành bài để mở sticker mới.</p>
+      </div>
+    </section>
+
+    <section id="viewLesson" class="view">
+      <div class="card">
+        <div class="progress"><div id="progressBar" class="progressBar" style="width:0%"></div></div>
+
+        <div class="lessonHeader">
+          <div>
+            <div class="chip" id="chipCategory">Category</div>
+            <h2 id="lessonWord">Word</h2>
+            <div class="muted" id="lessonHint">Nghe và nhìn</div>
+          </div>
+          <div class="lessonBtns">
+            <button id="btnReplay" class="btn">Replay</button>
+            <button id="btnNext" class="btn primary">Next</button>
+          </div>
+        </div>
+
+        <div id="stage" class="stage"></div>
+      </div>
+    </section>
+
+    <section id="viewParents" class="view">
+      <div class="card">
+        <h2>Parents Mode</h2>
+        <p class="muted">Cài giới hạn & xem tiến độ.</p>
+
+        <div class="row gap">
+          <div class="field">
+            <label>Giới hạn phút/ngày</label>
+            <select id="dailyLimit">
+              <option value="3">3 phút</option>
+              <option value="5" selected>5 phút</option>
+              <option value="7">7 phút</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Độ tuổi</label>
+            <select id="age">
+              <option value="4">4</option>
+              <option value="5" selected>5</option>
+              <option value="6">6</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row gap">
+          <button id="btnSaveParents" class="btn primary">Lưu</button>
+          <button id="btnReset" class="btn danger">Reset</button>
+          <button id="btnCloseParents" class="btn ghost">Đóng</button>
+        </div>
+
+        <hr />
+
+        <h3>Báo cáo nhanh</h3>
+        <div class="row">
+          <div class="stat"><div class="statNum" id="pStreak">0</div><div class="statLabel">Streak</div></div>
+          <div class="stat"><div class="statNum" id="pDone">0</div><div class="statLabel">Bài hoàn thành</div></div>
+          <div class="stat"><div class="statNum" id="pLast">—</div><div class="statLabel">Học gần nhất</div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

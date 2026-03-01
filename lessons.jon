@@ -1,0 +1,12 @@
+[
+  { "id":"a_open", "category":"Actions", "word":"Open", "emoji":"🚪", "distractors":[{"word":"Close","emoji":"🚪"},{"word":"Push","emoji":"👉"}] },
+  { "id":"a_close", "category":"Actions", "word":"Close", "emoji":"🚪", "distractors":[{"word":"Open","emoji":"🚪"},{"word":"Pull","emoji":"🤏"}] },
+  { "id":"a_push", "category":"Actions", "word":"Push", "emoji":"👉", "distractors":[{"word":"Pull","emoji":"🤏"},{"word":"Open","emoji":"🚪"}] },
+  { "id":"a_pull", "category":"Actions", "word":"Pull", "emoji":"🤏", "distractors":[{"word":"Push","emoji":"👉"},{"word":"Close","emoji":"🚪"}] },
+  { "id":"c_red", "category":"Colors", "word":"Red", "emoji":"🟥", "distractors":[{"word":"Blue","emoji":"🟦"},{"word":"Green","emoji":"🟩"}] },
+  { "id":"c_blue", "category":"Colors", "word":"Blue", "emoji":"🟦", "distractors":[{"word":"Yellow","emoji":"🟨"},{"word":"Red","emoji":"🟥"}] },
+  { "id":"f_apple", "category":"Fruits", "word":"Apple", "emoji":"🍎", "distractors":[{"word":"Banana","emoji":"🍌"},{"word":"Orange","emoji":"🍊"}] },
+  { "id":"f_banana", "category":"Fruits", "word":"Banana", "emoji":"🍌", "distractors":[{"word":"Grapes","emoji":"🍇"},{"word":"Apple","emoji":"🍎"}] },
+  { "id":"w_rainy", "category":"Weather", "word":"Rainy", "emoji":"🌧️", "distractors":[{"word":"Sunny","emoji":"☀️"},{"word":"Windy","emoji":"💨"}] },
+  { "id":"w_windy", "category":"Weather", "word":"Windy", "emoji":"💨", "distractors":[{"word":"Cloudy","emoji":"☁️"},{"word":"Rainy","emoji":"🌧️"}] }
+]
