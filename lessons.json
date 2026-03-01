@@ -6,7 +6,7 @@
     "level": 1,
     "word": "Open",
     "emoji": "🚪",
-    "image": "./assets/img/open.png",
+    "image": "/assets/img/open.png",
     "example": "Open the door.",
     "distractors": [
       { "word": "Close", "emoji": "🚪" },
@@ -20,7 +20,7 @@
     "level": 1,
     "word": "Close",
     "emoji": "🚪",
-    "image": "./assets/img/close-forbidden-svgrepo-com.svg",
+    "image": "/assets/img/close-forbidden-svgrepo-com.svg",
     "example": "Close the door.",
     "distractors": [
       { "word": "Open", "emoji": "🚪" },
