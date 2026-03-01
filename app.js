@@ -1,341 +1,484 @@
+/* Kudo English – PRO v1 (client-only)
+   Files used: lessons.json (array)
+   Features: Learn -> Quiz, TTS, streak, goal minutes, stickers, parents mode
+*/
+
 const $ = (id) => document.getElementById(id);
 
-const views = { home: $("viewHome"), lesson: $("viewLesson"), parents: $("viewParents") };
-function showView(name){ Object.values(views).forEach(v => v.classList.remove("active")); views[name].classList.add("active"); }
+const STORE_KEY = "kudo_english_state_v1";
 
-const LS = {
-  get(k, fb){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; }catch{ return fb; } },
-  set(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
+const DEFAULT_STATE = {
+  learnedIds: [],        // ids learned
+  lastLearnDate: null,   // YYYY-MM-DD
+  streak: 0,
+  goalMin: 5,
+  voiceURI: "",
+  ttsRate: 0.9,
+  stickersUnlocked: 0,   // count
+  // Session
+  sessionStartTs: null,
+  sessionMinutesToday: 0,
 };
 
-const state = {
-  lessons: [],
-  todayLesson: null,
-  stepIndex: 0,
-  steps: ["teach","gameA","gameB","reward"],
-  progress: LS.get("kudo_progress",{ streak:0, lastDay:null, doneCount:0, mastered:{}, stickers:[] }),
-  settings: LS.get("kudo_settings",{ dailyLimit:5, age:5 })
-};
+let lessons = [];
+let state = loadState();
 
-function todayKey(){
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth()+1).padStart(2,"0");
-  const dd = String(d.getDate()).padStart(2,"0");
-  return `${yyyy}-${mm}-${dd}`;
+let current = null; // current lesson object
+let replayCount = 0;
+
+let voices = [];
+let speechReady = false;
+
+const STICKER_TOTAL = 12;
+const STICKER_MILESTONES = [1,2,3,5,8,12,16,20,25,30,40,50]; // unlock by learned count
+
+// ---------- INIT ----------
+init();
+
+async function init(){
+  bindUI();
+  renderStickerGrid();
+  await loadLessons();
+  initSpeech();
+
+  // update dashboard
+  updateDailyCounters();
+  renderDashboard();
+
+  // Auto: if user already started session today, keep
+  if (!state.sessionStartTs) state.sessionStartTs = Date.now();
+  saveState();
 }
 
-function ensureStreak(){
-  const t = todayKey();
-  const last = state.progress.lastDay;
-  if(!last){ state.progress.lastDay = t; LS.set("kudo_progress", state.progress); return; }
-  if(last === t) return;
+async function loadLessons(){
+  try{
+    const res = await fetch("./lessons.json", { cache: "no-store" });
+    if(!res.ok) throw new Error("Cannot fetch lessons.json");
+    lessons = await res.json();
 
-  const lastDate = new Date(last + "T00:00:00");
-  const nowDate  = new Date(t + "T00:00:00");
-  const diffDays = Math.round((nowDate - lastDate) / (1000*60*60*24));
-  if(diffDays !== 1) state.progress.streak = 0;
-  state.progress.lastDay = t;
-  LS.set("kudo_progress", state.progress);
-}
+    // Basic sanitize
+    lessons = (Array.isArray(lessons) ? lessons : []).filter(Boolean);
 
-function updateHomeUI(){
-  ensureStreak();
-  $("streakNum").textContent = String(state.progress.streak);
-  $("minutesLeft").textContent = String(state.settings.dailyLimit);
-  $("wordsMastered").textContent = String(Object.keys(state.progress.mastered).length);
-  renderStickers();
-}
-
-function renderStickers(){
-  const grid = $("stickerGrid");
-  grid.innerHTML = "";
-  const stickers = state.progress.stickers || [];
-  for(let i=0;i<12;i++){
-    const el = document.createElement("div");
-    el.className = "sticker" + (stickers[i] ? "" : " locked");
-    el.textContent = stickers[i] ? stickers[i] : "🔒";
-    grid.appendChild(el);
+    if(lessons.length === 0){
+      $("dashHint").textContent = "⚠️ lessons.json rỗng hoặc sai định dạng.";
+    } else {
+      $("dashHint").textContent = `Đã nạp ${lessons.length} từ.`;
+    }
+  } catch(e){
+    $("dashHint").textContent = "⚠️ Không tải được lessons.json. Kiểm tra file có nằm ở root repo và đúng tên.";
+    lessons = [];
   }
 }
 
-function pickTodayLesson(){
-  const t = todayKey();
-  let seed = 0;
-  for(const ch of t) seed = (seed*31 + ch.charCodeAt(0)) >>> 0;
-  const idx = seed % state.lessons.length;
-  state.todayLesson = state.lessons[idx];
+function bindUI(){
+  $("btnStart").addEventListener("click", startFlow);
+
+  $("btnReplay").addEventListener("click", () => {
+    if(!current) return;
+    speak(current.word);
+    replayCount++;
+    renderCoach();
+  });
+
+  $("btnNext").addEventListener("click", () => {
+    // move to quiz after user has seen word
+    if(!current) return;
+    showQuizForCurrent();
+  });
+
+  $("btnQuizReplay").addEventListener("click", () => {
+    if(!current) return;
+    speak(current.word);
+  });
+
+  $("btnContinue").addEventListener("click", () => {
+    // after quiz completed
+    nextWord();
+  });
+
+  // Parents
+  $("btnParents").addEventListener("click", openParents);
+  $("btnCloseModal").addEventListener("click", closeParents);
+  $("modalBackdrop").addEventListener("click", closeParents);
+
+  $("btnSaveSettings").addEventListener("click", () => {
+    state.goalMin = Number($("goalSelect").value || 5);
+    state.voiceURI = $("voiceSelect").value || "";
+    state.ttsRate = Number($("rateRange").value || 0.9);
+    saveState();
+    renderDashboard();
+    closeParents();
+  });
+
+  $("btnReset").addEventListener("click", () => {
+    const ok = confirm("Reset toàn bộ tiến trình? (streak, từ đã học, sticker)");
+    if(!ok) return;
+    state = { ...DEFAULT_STATE, goalMin: state.goalMin, voiceURI: state.voiceURI, ttsRate: state.ttsRate };
+    saveState();
+    renderStickerGrid();
+    renderDashboard();
+    hideLessonAndQuiz();
+    alert("Đã reset xong.");
+  });
 }
 
-function setProgressBar(){
-  const pct = Math.round((state.stepIndex) / (state.steps.length) * 100);
-  $("progressBar").style.width = `${pct}%`;
+// ---------- FLOW ----------
+function startFlow(){
+  if(lessons.length === 0) return;
+
+  // ensure daily state
+  updateDailyCounters();
+
+  // pick next lesson not learned, else random
+  current = pickNextLesson();
+  replayCount = 0;
+
+  showLessonCard(current);
+  speak(current.word);
 }
 
-function speakWord(word){
-  const u = new SpeechSynthesisUtterance(word);
-  u.lang = "en-US";
-  u.rate = 0.9;
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(u);
+function nextWord(){
+  // after finishing one quiz
+  current = pickNextLesson();
+  replayCount = 0;
+  showLessonCard(current);
+  speak(current.word);
 }
 
-function stepHint(step){
-  if(step==="teach") return "Nghe và nhìn";
-  if(step==="gameA") return "Nghe và chọn đúng";
-  if(step==="gameB") return "Kéo thả đúng chỗ";
-  if(step==="reward") return "Nhận sticker!";
-  return "";
+function pickNextLesson(){
+  const learnedSet = new Set(state.learnedIds);
+  const unlearned = lessons.filter(l => l && l.id && !learnedSet.has(l.id));
+  const pool = unlearned.length ? unlearned : lessons;
+
+  // Prefer variety: shuffle and pick
+  const idx = Math.floor(Math.random() * pool.length);
+  return pool[idx];
 }
 
-function renderStep(){
-  const lesson = state.todayLesson;
-  $("chipCategory").textContent = lesson.category;
-  $("lessonWord").textContent = lesson.word;
-  $("lessonHint").textContent = stepHint(state.steps[state.stepIndex]);
-  setProgressBar();
+function showLessonCard(lesson){
+  $("lessonCard").classList.remove("hidden");
+  $("quizCard").classList.add("hidden");
 
-  const stage = $("stage");
-  stage.innerHTML = "";
-
-  const step = state.steps[state.stepIndex];
-  if(step==="teach") renderTeach(stage, lesson);
-  if(step==="gameA") renderGameA(stage, lesson);
-  if(step==="gameB") renderGameB(stage, lesson);
-  if(step==="reward") renderReward(stage, lesson);
+  $("pillCategory").textContent = lesson.category || "Category";
+  $("lessonWord").textContent = lesson.word || "Word";
+  $("lessonEmoji").textContent = lesson.emoji || "🙂";
+  $("replayWord").textContent = lesson.word || "Word";
+  renderCoach();
 }
 
-function renderTeach(stage, lesson){
-  const box = document.createElement("div");
-  box.className = "bigObject";
-  box.innerHTML = `<div class="emoji">${lesson.emoji}</div><div class="sub">Replay để nghe: <b>${lesson.word}</b></div>`;
-  stage.appendChild(box);
+function showQuizForCurrent(){
+  $("lessonCard").classList.add("hidden");
+  $("quizCard").classList.remove("hidden");
 
-  const toast = document.createElement("div");
-  toast.className = "toast";
-  toast.textContent = "Replay 2 lần rồi bấm Next 🙂";
-  stage.appendChild(toast);
+  $("quizCategory").textContent = (current.category || "Category") + " • Quiz";
+  $("quizWord").textContent = current.word || "Word";
 
-  setTimeout(() => speakWord(lesson.word), 350);
+  $("resultBox").classList.add("hidden");
+  $("btnContinue").classList.add("hidden");
+
+  buildOptions(current);
 }
 
+function hideLessonAndQuiz(){
+  $("lessonCard").classList.add("hidden");
+  $("quizCard").classList.add("hidden");
+}
+
+function renderCoach(){
+  const need = Math.max(0, 2 - replayCount);
+  if(need > 0){
+    $("coachBox").textContent = `Replay ${need} lần rồi bấm Next 🙂`;
+  } else {
+    $("coachBox").textContent = `Tốt! Bấm Next để làm Quiz ✅`;
+  }
+}
+
+// ---------- QUIZ ----------
+function buildOptions(lesson){
+  const optionsEl = $("options");
+  optionsEl.innerHTML = "";
+
+  const correct = (lesson.word || "").trim();
+  const distractors = Array.isArray(lesson.distractors) ? lesson.distractors : [];
+  const wrongWords = distractors
+    .map(d => (d && d.word ? String(d.word).trim() : ""))
+    .filter(Boolean)
+    .slice(0, 2);
+
+  // Fallback if not enough distractors
+  while(wrongWords.length < 2){
+    const candidate = lessons[Math.floor(Math.random() * lessons.length)];
+    const w = candidate?.word?.trim();
+    if(w && w !== correct && !wrongWords.includes(w)) wrongWords.push(w);
+    if(lessons.length < 3) break;
+  }
+
+  const optionWords = shuffle([correct, ...wrongWords]).slice(0, 3);
+
+  optionWords.forEach(word => {
+    const btn = document.createElement("button");
+    btn.className = "option";
+    btn.textContent = word;
+    btn.addEventListener("click", () => onAnswer(btn, word, correct));
+    optionsEl.appendChild(btn);
+  });
+}
+
+function onAnswer(buttonEl, chosen, correct){
+  // lock all options
+  const all = Array.from(document.querySelectorAll(".option"));
+  all.forEach(b => b.disabled = true);
+
+  const isCorrect = chosen === correct;
+
+  // mark
+  all.forEach(b => {
+    if(b.textContent === correct) b.classList.add("correct");
+  });
+  if(!isCorrect) buttonEl.classList.add("wrong");
+
+  // result
+  const resultBox = $("resultBox");
+  resultBox.classList.remove("hidden");
+  resultBox.textContent = isCorrect ? "🎉 Đúng rồi! Tuyệt!" : `❌ Chưa đúng. Đáp án đúng là: ${correct}`;
+
+  // Update learning progress when quiz answered (count as learned only if correct)
+  if(isCorrect) markLearned(current);
+
+  $("btnContinue").classList.remove("hidden");
+}
+
+// ---------- PROGRESS / STREAK / STICKERS ----------
+function markLearned(lesson){
+  if(!lesson?.id) return;
+
+  if(!state.learnedIds.includes(lesson.id)){
+    state.learnedIds.push(lesson.id);
+  }
+
+  // Add “minutes today” approximate: 0.5 min per word (simple heuristic)
+  // and keep within goal context
+  state.sessionMinutesToday = Number(state.sessionMinutesToday || 0) + 0.5;
+
+  // Stickers
+  const learnedCount = state.learnedIds.length;
+  const unlockCount = STICKER_MILESTONES.filter(m => learnedCount >= m).length;
+  if(unlockCount > state.stickersUnlocked){
+    state.stickersUnlocked = unlockCount;
+    renderStickerGrid();
+    $("stickerHint").textContent = `🎁 Bạn vừa mở sticker #${unlockCount}!`;
+  }
+
+  saveState();
+  renderDashboard();
+}
+
+function updateDailyCounters(){
+  const today = yyyy_mm_dd(new Date());
+  const last = state.lastLearnDate;
+
+  if(!last){
+    // first time
+    state.lastLearnDate = today;
+    state.streak = 1;
+    state.sessionMinutesToday = 0;
+    state.sessionStartTs = Date.now();
+    saveState();
+    return;
+  }
+
+  if(last === today){
+    // same day: nothing
+    return;
+  }
+
+  // different day: evaluate streak
+  const diff = dayDiff(last, today);
+  if(diff === 1){
+    state.streak = (state.streak || 0) + 1;
+  } else {
+    state.streak = 1;
+  }
+
+  state.lastLearnDate = today;
+  state.sessionMinutesToday = 0;
+  state.sessionStartTs = Date.now();
+  saveState();
+}
+
+function renderDashboard(){
+  $("statStreak").textContent = String(state.streak || 0);
+  $("statGoalMin").textContent = String(state.goalMin || 5);
+  $("statLearned").textContent = String(state.learnedIds?.length || 0);
+
+  const learned = state.learnedIds?.length || 0;
+  const total = lessons.length || 0;
+
+  const minToday = Number(state.sessionMinutesToday || 0).toFixed(1);
+  const goal = Number(state.goalMin || 5);
+
+  $("dashHint").textContent =
+    total
+      ? `Tiến độ: ${learned}/${total} từ • Hôm nay: ~${minToday}/${goal} phút`
+      : `Hôm nay: ~${minToday}/${goal} phút`;
+
+  renderStickerGrid();
+}
+
+function renderStickerGrid(){
+  const grid = $("stickerGrid");
+  if(!grid) return;
+  grid.innerHTML = "";
+
+  const unlocked = Math.min(state.stickersUnlocked || 0, STICKER_TOTAL);
+
+  // Simple sticker set
+  const stickerIcons = ["🐵","⭐","🚀","🍎","🎈","🏆","🌈","🧸","🍌","🎮","🧠","🎁"];
+
+  for(let i=1;i<=STICKER_TOTAL;i++){
+    const el = document.createElement("div");
+    el.className = "sticker";
+    const isOpen = i <= unlocked;
+    el.textContent = isOpen ? (stickerIcons[i-1] || "⭐") : "🔒";
+    grid.appendChild(el);
+  }
+
+  const learnedCount = state.learnedIds?.length || 0;
+  const nextMilestone = STICKER_MILESTONES.find(m => m > learnedCount);
+  $("stickerHint").textContent = nextMilestone
+    ? `Còn ${nextMilestone - learnedCount} từ nữa để mở sticker tiếp theo.`
+    : `Bạn đã mở hết sticker hiện có!`;
+}
+
+// ---------- TTS ----------
+function initSpeech(){
+  // voices can be async; refresh a few times
+  const tryLoad = () => {
+    voices = window.speechSynthesis?.getVoices?.() || [];
+    if(voices.length){
+      speechReady = true;
+      fillVoiceSelect();
+    }
+  };
+
+  tryLoad();
+  window.speechSynthesis?.addEventListener?.("voiceschanged", () => {
+    tryLoad();
+  });
+
+  // Fill settings defaults
+  $("goalSelect").value = String(state.goalMin || 5);
+  $("rateRange").value = String(state.ttsRate || 0.9);
+}
+
+function fillVoiceSelect(){
+  const sel = $("voiceSelect");
+  if(!sel) return;
+  sel.innerHTML = "";
+
+  // Prefer EN voices
+  const en = voices.filter(v => (v.lang || "").toLowerCase().startsWith("en"));
+  const list = en.length ? en : voices;
+
+  // Add default option
+  const opt0 = document.createElement("option");
+  opt0.value = "";
+  opt0.textContent = "Auto (khuyến nghị)";
+  sel.appendChild(opt0);
+
+  list.forEach(v => {
+    const opt = document.createElement("option");
+    opt.value = v.voiceURI;
+    opt.textContent = `${v.name} (${v.lang})`;
+    sel.appendChild(opt);
+  });
+
+  sel.value = state.voiceURI || "";
+}
+
+function speak(text){
+  if(!text) return;
+
+  try{
+    const synth = window.speechSynthesis;
+    if(!synth) return;
+
+    synth.cancel();
+
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = Number(state.ttsRate || 0.9);
+    utter.pitch = 1.0;
+    utter.volume = 1.0;
+
+    // Choose voice if selected
+    if(state.voiceURI && voices.length){
+      const v = voices.find(x => x.voiceURI === state.voiceURI);
+      if(v) utter.voice = v;
+    } else {
+      // try best EN voice
+      const en = voices.find(v => (v.lang||"").toLowerCase().startsWith("en"));
+      if(en) utter.voice = en;
+    }
+
+    synth.speak(utter);
+  } catch(e){
+    // ignore
+  }
+}
+
+// ---------- PARENTS MODAL ----------
+function openParents(){
+  $("parentsModal").classList.remove("hidden");
+  $("goalSelect").value = String(state.goalMin || 5);
+  $("rateRange").value = String(state.ttsRate || 0.9);
+
+  // ensure voices shown
+  voices = window.speechSynthesis?.getVoices?.() || voices;
+  fillVoiceSelect();
+}
+
+function closeParents(){
+  $("parentsModal").classList.add("hidden");
+}
+
+// ---------- STORAGE ----------
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(!raw) return { ...DEFAULT_STATE };
+    const parsed = JSON.parse(raw);
+    return { ...DEFAULT_STATE, ...parsed };
+  } catch {
+    return { ...DEFAULT_STATE };
+  }
+}
+
+function saveState(){
+  try{
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  } catch {}
+}
+
+// ---------- HELPERS ----------
 function shuffle(arr){
-  const a = arr.slice();
+  const a = [...arr];
   for(let i=a.length-1;i>0;i--){
     const j = Math.floor(Math.random()*(i+1));
-    [a[i], a[j]] = [a[j], a[i]];
+    [a[i],a[j]] = [a[j],a[i]];
   }
   return a;
 }
 
-function playDing(){
-  try{
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const o = ctx.createOscillator(); const g = ctx.createGain();
-    o.type = "sine"; o.frequency.value = 880;
-    g.gain.value = 0.0001;
-    o.connect(g); g.connect(ctx.destination);
-    o.start();
-    g.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
-    o.stop(ctx.currentTime + 0.13);
-  }catch{}
-}
-function playBuzz(){
-  try{
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const o = ctx.createOscillator(); const g = ctx.createGain();
-    o.type = "square"; o.frequency.value = 140;
-    g.gain.value = 0.0001;
-    o.connect(g); g.connect(ctx.destination);
-    o.start();
-    g.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.10);
-    o.stop(ctx.currentTime + 0.11);
-  }catch{}
+function yyyy_mm_dd(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
 }
 
-function nextStep(){
-  if(state.stepIndex < state.steps.length - 1){
-    state.stepIndex++;
-    renderStep();
-  }
+function dayDiff(fromYYYYMMDD, toYYYYMMDD){
+  const a = new Date(fromYYYYMMDD + "T00:00:00");
+  const b = new Date(toYYYYMMDD + "T00:00:00");
+  const ms = b - a;
+  return Math.round(ms / (1000*60*60*24));
 }
-
-function renderGameA(stage, lesson){
-  const prompt = document.createElement("div");
-  prompt.className = "toast";
-  prompt.textContent = "Nghe và chạm đúng hình!";
-  stage.appendChild(prompt);
-
-  const choices = shuffle([{word:lesson.word, emoji:lesson.emoji, correct:true}, ...lesson.distractors.map(d=>({...d, correct:false}))]).slice(0,3);
-  const grid = document.createElement("div");
-  grid.className = "cardGrid";
-
-  let locked = false;
-  choices.forEach(c=>{
-    const btn = document.createElement("button");
-    btn.className = "choice";
-    btn.innerHTML = `<div class="emoji">${c.emoji}</div><div class="label">${c.word}</div>`;
-    btn.addEventListener("click", ()=>{
-      if(locked) return;
-      locked = true;
-      if(c.correct){
-        btn.classList.add("good"); playDing();
-        setTimeout(()=>{ locked=false; nextStep(); }, 600);
-      }else{
-        btn.classList.add("bad"); playBuzz();
-        setTimeout(()=>{
-          const correctBtn = [...grid.querySelectorAll(".choice")].find(x=>x.textContent.includes(lesson.word));
-          if(correctBtn) correctBtn.classList.add("good");
-          locked = false;
-        }, 600);
-      }
-    });
-    grid.appendChild(btn);
-  });
-
-  stage.appendChild(grid);
-  setTimeout(()=>speakWord(lesson.word), 350);
-}
-
-function renderGameB(stage, lesson){
-  const prompt = document.createElement("div");
-  prompt.className = "toast";
-  prompt.textContent = `Kéo đúng: ${lesson.word}`;
-  stage.appendChild(prompt);
-
-  const wrap = document.createElement("div");
-  wrap.className = "dragRow";
-
-  const drop = document.createElement("div");
-  drop.className = "dropZone";
-  drop.innerHTML = `<div style="text-align:center"><div style="font-size:42px">🎯</div><div class="muted">Thả <b>${lesson.word}</b> vào đây</div></div>`;
-
-  drop.addEventListener("dragover", (e)=>{ e.preventDefault(); drop.classList.add("active"); });
-  drop.addEventListener("dragleave", ()=>drop.classList.remove("active"));
-  drop.addEventListener("drop", (e)=>{
-    e.preventDefault(); drop.classList.remove("active");
-    const data = e.dataTransfer.getData("text/plain");
-    if(data === lesson.word){
-      drop.innerHTML = `<div style="text-align:center"><div style="font-size:72px">${lesson.emoji}</div><div style="font-weight:900">Great!</div></div>`;
-      playDing();
-      setTimeout(()=>nextStep(), 650);
-    }else{
-      playBuzz();
-    }
-  });
-
-  const dragBox = document.createElement("div");
-  dragBox.className = "draggables";
-
-  const items = shuffle([{word:lesson.word, emoji:lesson.emoji}, ...lesson.distractors.map(d=>({word:d.word, emoji:d.emoji}))]).slice(0,4);
-  items.forEach(it=>{
-    const d = document.createElement("div");
-    d.className = "dragItem";
-    d.draggable = true;
-    d.textContent = it.emoji;
-    d.title = it.word;
-    d.addEventListener("dragstart",(e)=>{ e.dataTransfer.setData("text/plain", it.word); });
-    dragBox.appendChild(d);
-  });
-
-  wrap.appendChild(drop);
-  wrap.appendChild(dragBox);
-  stage.appendChild(wrap);
-
-  setTimeout(()=>speakWord(lesson.word), 350);
-}
-
-function awardSticker(lesson){
-  const stickers = state.progress.stickers || [];
-  if(stickers.includes(lesson.emoji)) return;
-  for(let i=0;i<12;i++){
-    if(!stickers[i]){ stickers[i] = lesson.emoji; break; }
-  }
-  state.progress.stickers = stickers;
-  LS.set("kudo_progress", state.progress);
-}
-
-function finishLesson(){
-  const id = state.todayLesson.id;
-  state.progress.doneCount = (state.progress.doneCount||0) + 1;
-  state.progress.mastered[id] = true;
-
-  const t = todayKey();
-  const completedKey = "kudo_completed_" + t;
-  if(!LS.get(completedKey, false)){
-    state.progress.streak = (state.progress.streak||0) + 1;
-    LS.set(completedKey, true);
-  }
-  LS.set("kudo_progress", state.progress);
-}
-
-function renderReward(stage, lesson){
-  const box = document.createElement("div");
-  box.className = "bigObject";
-  box.innerHTML = `<div class="emoji">🎉</div><div class="sub">Hoàn thành! Nhận sticker: <b>${lesson.emoji}</b></div>`;
-  stage.appendChild(box);
-
-  const btn = document.createElement("button");
-  btn.className = "btn primary big";
-  btn.textContent = "Nhận sticker & về Home";
-  btn.addEventListener("click", ()=>{
-    awardSticker(lesson);
-    finishLesson();
-    showView("home");
-    updateHomeUI();
-  });
-  stage.appendChild(btn);
-}
-
-function syncParentsUI(){
-  $("dailyLimit").value = String(state.settings.dailyLimit||5);
-  $("age").value = String(state.settings.age||5);
-  $("pStreak").textContent = String(state.progress.streak||0);
-  $("pDone").textContent = String(state.progress.doneCount||0);
-  $("pLast").textContent = state.progress.lastDay || "—";
-}
-
-function wireUI(){
-  $("btnStart").addEventListener("click", ()=>{
-    state.stepIndex = 0;
-    showView("lesson");
-    renderStep();
-  });
-  $("btnReplay").addEventListener("click", ()=> speakWord(state.todayLesson.word));
-  $("btnNext").addEventListener("click", ()=> nextStep());
-
-  $("btnParents").addEventListener("click", ()=>{ showView("parents"); syncParentsUI(); });
-  $("btnCloseParents").addEventListener("click", ()=>{ showView("home"); updateHomeUI(); });
-
-  $("btnSaveParents").addEventListener("click", ()=>{
-    state.settings.dailyLimit = Number($("dailyLimit").value);
-    state.settings.age = Number($("age").value);
-    LS.set("kudo_settings", state.settings);
-    showView("home");
-    updateHomeUI();
-  });
-
-  $("btnReset").addEventListener("click", ()=>{
-    if(confirm("Reset toàn bộ tiến độ?")){
-      localStorage.clear();
-      location.reload();
-    }
-  });
-}
-
-async function loadLessons(){
-  const res = await fetch("lessons.json");
-  state.lessons = await res.json();
-  pickTodayLesson();
-}
-
-(async function init(){
-  wireUI();
-  state.settings = LS.get("kudo_settings", state.settings);
-  state.progress = LS.get("kudo_progress", state.progress);
-  await loadLessons();
-  updateHomeUI();
-  showView("home");
-})();
