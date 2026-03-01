@@ -20,7 +20,7 @@
     "level": 1,
     "word": "Close",
     "emoji": "🚪",
-    "image": "./assets/img/close.png",
+    "image": "./assets/img/close-forbidden-svgrepo-com.svg",
     "example": "Close the door.",
     "distractors": [
       { "word": "Open", "emoji": "🚪" },
