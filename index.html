@@ -1,108 +1,210 @@
 <!doctype html>
 <html lang="vi">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Kudo English – 5 Minutes a Day</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kudo English</title>
+  <link rel="stylesheet" href="./styles.css"/>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
       <div class="logo">K</div>
-      <div>
-        <div class="title">Kudo English</div>
-        <div class="subtitle">3–5 phút mỗi ngày</div>
+      <div class="brandText">
+        <div class="brandTitle">Kudo English</div>
+        <div class="brandSub">3–5 phút mỗi ngày</div>
       </div>
     </div>
-    <button id="btnParents" class="btn ghost">Parents</button>
+
+    <div class="topActions">
+      <button id="btnLibrary" class="btn btnGhost">Library</button>
+      <button id="btnParents" class="btn btnGhost">Parents</button>
+    </div>
   </header>
 
   <main class="container">
-    <section id="viewHome" class="view active">
-      <div class="card hero">
-        <h1>Hôm nay học gì?</h1>
-        <p class="muted">Chạm “Bắt đầu” để học 1 từ trong 3–5 phút.</p>
-
-        <div class="row">
-          <div class="stat"><div class="statNum" id="streakNum">0</div><div class="statLabel">Streak</div></div>
-          <div class="stat"><div class="statNum" id="minutesLeft">5</div><div class="statLabel">Phút/ngày</div></div>
-          <div class="stat"><div class="statNum" id="wordsMastered">0</div><div class="statLabel">Từ đã học</div></div>
+    <!-- DASHBOARD -->
+    <section class="card dashboard" id="dashCard">
+      <div class="dashHeader">
+        <div>
+          <h1>Hôm nay học gì?</h1>
+          <p class="muted">Chạm “Bắt đầu” để học theo chủ đề bạn chọn.</p>
         </div>
-
-        <button id="btnStart" class="btn primary big">Bắt đầu hôm nay</button>
       </div>
 
-      <div class="card">
-        <h2>Sticker của bé</h2>
-        <div id="stickerGrid" class="stickers"></div>
-        <p class="muted small">Hoàn thành bài để mở sticker mới.</p>
+      <div class="stats">
+        <div class="stat">
+          <div class="statNum" id="statStreak">0</div>
+          <div class="statLabel">Streak</div>
+        </div>
+        <div class="stat">
+          <div class="statNum"><span id="statGoalMin">5</span></div>
+          <div class="statLabel">Phút/ngày</div>
+        </div>
+        <div class="stat">
+          <div class="statNum" id="statLearned">0</div>
+          <div class="statLabel">Từ đã học</div>
+        </div>
       </div>
+
+      <div class="grid2">
+        <div class="field">
+          <label>Chủ đề hôm nay</label>
+          <select id="topicSelect"></select>
+        </div>
+        <div class="field">
+          <label>Độ khó</label>
+          <select id="levelSelect">
+            <option value="1">Level 1 (dễ)</option>
+            <option value="2">Level 2</option>
+            <option value="3">Level 3</option>
+            <option value="all" selected>Tất cả</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="btnStart" class="btn btnPrimary btnBig">Bắt đầu hôm nay</button>
+      <div class="tiny muted" id="dashHint"></div>
     </section>
 
-    <section id="viewLesson" class="view">
-      <div class="card">
-        <div class="progress"><div id="progressBar" class="progressBar" style="width:0%"></div></div>
-
-        <div class="lessonHeader">
-          <div>
-            <div class="chip" id="chipCategory">Category</div>
-            <h2 id="lessonWord">Word</h2>
-            <div class="muted" id="lessonHint">Nghe và nhìn</div>
-          </div>
-          <div class="lessonBtns">
-            <button id="btnReplay" class="btn">Replay</button>
-            <button id="btnNext" class="btn primary">Next</button>
-          </div>
+    <!-- STICKERS -->
+    <section class="card" id="stickerCard">
+      <div class="cardRow">
+        <div>
+          <h2>Sticker của bé</h2>
+          <p class="muted">Hoàn thành bài để mở sticker mới.</p>
         </div>
-
-        <div id="stage" class="stage"></div>
+        <div class="tiny muted" id="stickerHint"></div>
       </div>
+      <div class="stickers" id="stickerGrid"></div>
     </section>
 
-    <section id="viewParents" class="view">
-      <div class="card">
-        <h2>Parents Mode</h2>
-        <p class="muted">Cài giới hạn & xem tiến độ.</p>
+    <!-- LESSON -->
+    <section class="card lesson hidden" id="lessonCard">
+      <div class="lessonTop">
+        <span class="pill" id="pillCategory">Category</span>
+        <div class="lessonBtns">
+          <button id="btnBackDash" class="btn btnGhost">Back</button>
+          <button id="btnReplay" class="btn btnGhost">Replay</button>
+          <button id="btnNext" class="btn btnPrimary">Next</button>
+        </div>
+      </div>
 
-        <div class="row gap">
-          <div class="field">
-            <label>Giới hạn phút/ngày</label>
-            <select id="dailyLimit">
-              <option value="3">3 phút</option>
-              <option value="5" selected>5 phút</option>
-              <option value="7">7 phút</option>
-            </select>
+      <div class="lessonTitle" id="lessonWord">Word</div>
+      <div class="muted" id="lessonMeta">Nghe và nhìn</div>
+
+      <div class="panelV2">
+        <div class="mediaBox" id="mediaBox">
+          <div class="bigEmoji" id="lessonEmoji">🙂</div>
+        </div>
+        <div class="lessonInfo">
+          <div class="hintLine">
+            <span class="muted">Replay để nghe:</span> <b id="replayWord">Word</b>
           </div>
-
-          <div class="field">
-            <label>Độ tuổi</label>
-            <select id="age">
-              <option value="4">4</option>
-              <option value="5" selected>5</option>
-              <option value="6">6</option>
-            </select>
+          <div class="example" id="exampleLine"></div>
+          <div class="progressLine">
+            <span class="muted">Tiến độ chủ đề:</span> <b id="topicProgress">0/0</b>
           </div>
         </div>
+      </div>
 
-        <div class="row gap">
-          <button id="btnSaveParents" class="btn primary">Lưu</button>
-          <button id="btnReset" class="btn danger">Reset</button>
-          <button id="btnCloseParents" class="btn ghost">Đóng</button>
+      <div class="coach" id="coachBox">Replay 2 lần rồi bấm Next 🙂</div>
+    </section>
+
+    <!-- QUIZ -->
+    <section class="card quiz hidden" id="quizCard">
+      <div class="quizTop">
+        <span class="pill" id="quizCategory">Quiz</span>
+        <div class="quizBtns">
+          <button id="btnQuizReplay" class="btn btnGhost">Replay</button>
         </div>
+      </div>
 
-        <hr />
+      <div class="quizPrompt">
+        Chọn từ đúng:
+        <div class="quizWord" id="quizWord">Word</div>
+      </div>
 
-        <h3>Báo cáo nhanh</h3>
-        <div class="row">
-          <div class="stat"><div class="statNum" id="pStreak">0</div><div class="statLabel">Streak</div></div>
-          <div class="stat"><div class="statNum" id="pDone">0</div><div class="statLabel">Bài hoàn thành</div></div>
-          <div class="stat"><div class="statNum" id="pLast">—</div><div class="statLabel">Học gần nhất</div></div>
-        </div>
+      <div class="options" id="options"></div>
+      <div class="result hidden" id="resultBox"></div>
+
+      <div class="quizFooter">
+        <button id="btnContinue" class="btn btnPrimary hidden">Tiếp tục</button>
       </div>
     </section>
   </main>
 
-  <script src="app.js"></script>
+  <!-- LIBRARY MODAL -->
+  <div class="modal hidden" id="libraryModal">
+    <div class="modalBackdrop" id="libraryBackdrop"></div>
+    <div class="modalCard">
+      <div class="modalHeader">
+        <h3>Library</h3>
+        <button class="btn btnGhost" id="btnCloseLibrary">Đóng</button>
+      </div>
+      <div class="modalBody">
+        <div class="row">
+          <label>Lọc theo chủ đề</label>
+          <select id="libTopicSelect"></select>
+        </div>
+        <div class="row">
+          <label>Tìm từ</label>
+          <input id="libSearch" placeholder="gõ: open, apple..." />
+        </div>
+        <div class="libList" id="libList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PARENTS MODAL -->
+  <div class="modal hidden" id="parentsModal">
+    <div class="modalBackdrop" id="modalBackdrop"></div>
+    <div class="modalCard">
+      <div class="modalHeader">
+        <h3>Parents</h3>
+        <button class="btn btnGhost" id="btnCloseModal">Đóng</button>
+      </div>
+
+      <div class="modalBody">
+        <div class="row">
+          <label>Mục tiêu phút/ngày</label>
+          <select id="goalSelect">
+            <option value="3">3</option>
+            <option value="5" selected>5</option>
+            <option value="7">7</option>
+            <option value="10">10</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label>Giọng đọc (TTS)</label>
+          <select id="voiceSelect"></select>
+          <div class="tiny muted">Khuyến nghị voice EN-US nếu có.</div>
+        </div>
+
+        <div class="row">
+          <label>Tốc độ đọc</label>
+          <input id="rateRange" type="range" min="0.7" max="1.1" step="0.05" value="0.9"/>
+          <div class="tiny muted">Chậm vừa đủ cho bé: 0.85–0.95</div>
+        </div>
+
+        <div class="row">
+          <label>Báo cáo học</label>
+          <div class="reportBox" id="reportBox"></div>
+        </div>
+
+        <div class="row dangerZone">
+          <button id="btnReset" class="btn btnDanger">Reset tiến trình</button>
+          <div class="tiny muted">Xóa streak, số từ đã học, sticker, lịch sử sai.</div>
+        </div>
+      </div>
+
+      <div class="modalFooter">
+        <button id="btnSaveSettings" class="btn btnPrimary">Lưu</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
 </body>
 </html>
